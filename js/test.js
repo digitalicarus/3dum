@@ -22,16 +22,20 @@ function jsonp(src) {
 
 function gameloop () {
 	ctx.clearRect(0, 0, canvas.width, canvas.height);
+	//lilTeapot.rotateX(1);
+	lilTeapot.rotateY(1);
 	lilTeapot.render();
 	reqFrame(gameloop);
 }
 
 function loadObjData (data) {
-	Teapot = Model.define(data.data.files['laptop.obj'].content);
+	Teapot = Model.define(data.data.files['utahteapot.obj'].content);
 	lilTeapot = new Teapot();
 	lilTeapot.setViewDist(viewDist);
-	lilTeapot.scale(30);
-	lilTeapot.translateZ(1100);
+	lilTeapot.scale(150);
+	lilTeapot.translateY(70);
+	lilTeapot.translateZ(1300);
+	lilTeapot.rotateX(180);
 	gameloop();
 }
 

@@ -12,9 +12,10 @@ var Model = (function () {
 	;
 
 	// for tranformaciones
-	c.tmpVec   = new Arr(4);
-	c.tmpMat   = new Arr(16);
-	c.projPnt  = new Arr(2);
+	c.tmpVec      = new Arr(4);
+	c.tmpMat      = new Arr(16);
+	c.projPnt     = new Arr(2);
+	c.pntOffset   = 0;
 
 	(genTrigTables = function () {
 		var size      = 360 << trigRes
@@ -57,7 +58,7 @@ var Model = (function () {
 			this.rot[idx] = rotToTrigTabIdx(deg); 
 		}
 		mixins['translate' + cap(v)] = function (n)   { this.loc[idx] = n || this.loc[idx]; }
-		mixins['scale' + cap(v)]     = function (n)   { this.scale[idx] = n || this.scale[idx]; }
+		mixins['scale' + cap(v)]     = function (n)   { this.scl[idx] = n || this.scl[idx]; }
 	});
 
 	mixins.rotate  = function (x,y,z) {
@@ -100,40 +101,36 @@ var Model = (function () {
 		c.sx = this.scl[0];   c.sy = this.scl[1];   c.sz = this.scl[2];
 		c.rx = this.rot[0];   c.ry = this.rot[1];   c.rz = this.rot[2];
 
-		// rotation matrix - http://planning.cs.uiuc.edu/node104.html
-		c.tmpMat[0]  = tt.cos[c.rx]*tt.cos[c.rx];
-		c.tmpMat[1]  = tt.cos[c.rx]*tt.sin[c.ry]*tt.sin[c.rz] - tt.sin[c.rx]*tt.cos[c.rz];
-		c.tmpMat[2]  = tt.cos[c.rx]*tt.sin[c.ry]*tt.cos[c.rz] + tt.sin[c.rx]*tt.sin[c.rz];
-		c.tmpMat[3]  = c.x;
+		// scale, rotate, translate
+		c.tmpMat[0] = c.sx*tt.cos[c.rz]*tt.cos[c.ry];
+		c.tmpMat[1] = c.sy*(-tt.sin[c.rz]*tt.cos[c.rx] + tt.cos[c.rz]*tt.sin[c.ry]*tt.sin[c.rx]);
+		c.tmpMat[2] = c.sz*(tt.sin[c.rz]*tt.sin[c.rx] + tt.cos[c.rz]*tt.sin[c.ry]*tt.cos[c.rx]);
+		c.tmpMat[3] = c.x;
 
-		c.tmpMat[4]  = tt.sin[c.rx]*tt.cos[c.ry];
-		c.tmpMat[5]  = tt.sin[c.rx]*tt.sin[c.ry]*tt.sin[c.rz] + tt.cos[c.rx]*tt.cos[c.rz];
-		c.tmpMat[6]  = tt.sin[c.rx]*tt.sin[c.ry]*tt.cos[c.rz] - tt.cos[c.rx]*tt.sin[c.rz];
-		c.tmpMat[7]  = c.y;
+		c.tmpMat[4] = c.sx*tt.sin[c.rz]*tt.cos[c.ry];
+		c.tmpMat[5] = c.sy*(tt.cos[c.rz]*tt.cos[c.rx] + tt.sin[c.rz]*tt.sin[c.ry]*tt.sin[c.rx]);
+		c.tmpMat[6] = c.sz*(-tt.cos[c.rz]*tt.sin[c.rx] + tt.sin[c.rz]*tt.sin[c.ry]*tt.cos[c.rx]);
+		c.tmpMat[7] = c.y;
 
-		c.tmpMat[8]  = -tt.sin[c.ry];
-		c.tmpMat[9]  = tt.cos[c.ry]*tt.sin[c.rz];
-		c.tmpMat[10] = tt.cos[c.ry]*tt.cos[c.rz];
+		c.tmpMat[8] = -c.sx*tt.sin[c.ry];
+		c.tmpMat[9] = c.sy*tt.cos[c.ry]*tt.sin[c.rx];
+		c.tmpMat[10] = c.sz*tt.cos[c.ry]*tt.cos[c.rx];
 		c.tmpMat[11] = c.z;
 
-		c.tmpMat[12] = 0; c.tmpMat[13] = 0; c.tmpMat[14] = 0; c.tmpMat[15] = 1;
-
-		for (i=0; i<this.vertices.length; i++) {
+		for (i=0; i<this.vertices.length; i+=3) {
 			// scale
-			c.tmpVec[0] = this.vertices[i][0] * c.sx;
-			c.tmpVec[1] = this.vertices[i][1] * c.sy;
-			c.tmpVec[2] = this.vertices[i][2] * c.sz;
+			c.tmpVec[0] = this.vertices[i];
+			c.tmpVec[1] = this.vertices[i+1];
+			c.tmpVec[2] = this.vertices[i+2];
 			c.tmpVec[3] = 1;
 
-			// rotate & translate
-			this.worldVert[i][0] = c.tmpMat[0]*c.tmpVec[0] + c.tmpMat[1]*c.tmpVec[1] + 
+			// mat * vec
+			this.worldVert[i] = c.tmpMat[0]*c.tmpVec[0] + c.tmpMat[1]*c.tmpVec[1] + 
 				c.tmpMat[2]*c.tmpVec[2] + c.tmpMat[3]*c.tmpVec[3];
-			this.worldVert[i][1] = c.tmpMat[4]*c.tmpVec[0] + c.tmpMat[5]*c.tmpVec[1] + 
+			this.worldVert[i+1] = c.tmpMat[4]*c.tmpVec[0] + c.tmpMat[5]*c.tmpVec[1] + 
 				c.tmpMat[6]*c.tmpVec[2] + c.tmpMat[7]*c.tmpVec[3];
-			this.worldVert[i][2] = c.tmpMat[8]*c.tmpVec[0] + c.tmpMat[9]*c.tmpVec[1] + 
+			this.worldVert[i+2] = c.tmpMat[8]*c.tmpVec[0] + c.tmpMat[9]*c.tmpVec[1] + 
 				c.tmpMat[10]*c.tmpVec[2] + c.tmpMat[11]*c.tmpVec[3];
-			this.worldVert[i][3] = c.tmpMat[12]*c.tmpVec[0] + c.tmpMat[13]*c.tmpVec[1] + 
-				c.tmpMat[14]*c.tmpVec[2] + c.tmpMat[15]*c.tmpVec[3];
 		};
 	};
 
@@ -144,24 +141,25 @@ var Model = (function () {
 		this.ctx.save();
 		this.ctx.strokeStyle = 'lime';
 
-		// TODO: use cached vars instead of scope creating forEach
-		this.faces.forEach(function (face, faceIdx) {
-			this.ctx.beginPath();
+		for (i=0; i < this.vertRefs.length; i++) {
+			c.pntOffset = (this.vertRefs[i]-1)*3; //
 
-			this.worldVert[face].forEach(function (pntRef, vertIdx) {
-				// project the points
-				c.projPnt[0] = (this.worldVert[faceIdx][0]*this.viewDist/this.worldVert[faceIdx][2]) + this.halfWidth; 
-				c.projPnt[1] = (this.worldVert[faceIdx][1]*this.viewDist/this.worldVert[faceIdx][2])*this.aspect + canvas.halfHeight;
-				if (i==0) {
-					this.ctx.moveTo();
-				} else {
-					this.ctx.lineTo();
+			// project the vertex
+			c.projPnt[0] = (this.worldVert[c.pntOffset]*this.viewDist/this.worldVert[c.pntOffset+2]) + this.halfWidth; 
+			c.projPnt[1] = (this.worldVert[c.pntOffset+1]*this.viewDist/this.worldVert[c.pntOffset+2])*this.aspect + this.halfHeight;
+
+			if (i%this.vertPerFace === 0){ 
+				if (i !== 0) {
+					this.ctx.stroke();
+					this.ctx.closePath();
 				}
-			});
+				this.ctx.beginPath();
+				this.ctx.moveTo(c.projPnt[0], c.projPnt[1]);
+			} else {
+				this.ctx.lineTo(c.projPnt[0], c.projPnt[1]);
+			}
 
-			this.ctx.closePath();
-			this.stroke();
-		});
+		}
 
 		this.ctx.restore();
 	};
@@ -185,21 +183,21 @@ var Model = (function () {
 
 		Model.prototype.vertices = new Arr(
 			[].concat.apply([], (obj.match(/v .*/g) || []).map(function (v,i) {
-				return v.replace(/v /, '').split(' ').map(function (v,i) {
+				return v.replace(/v\s+/, '').split(/\s+/).map(function (v,i) {
 					return parseFloat(v);
 				});
 			}))
 		);
 
-		Model.prototype.faces = new Arr(
+		Model.prototype.vertRefs = new Arr(
 			[].concat.apply([], (obj.match(/f .*/g) || []).map(function (v,i) {
-				return v.replace(/f /, '').replace(/[\/]{1,2}[0-9]+/g, '').split(' ').map(function (v) {
+				return v.replace(/f\s+/, '').replace(/[\/]{1,2}[0-9]+/g, '').match(/[0-9]+/g).map(function (v) {
 					return parseFloat(v);
 				});
 			}))
 		);
 
-		Model.prototype.vertPerFace = obj.match(/f .*/)[0].replace(/f /, '').split(' ').length;
+		Model.prototype.vertPerFace = obj.match(/f .*/)[0].replace(/f\s+/, '').replace(/[\/]{1,2}[0-9]+/g, '').match(/[0-9]+/g).length;
 
 		for (i in mixins) {
 			if (mixins.hasOwnProperty(i)) {
