@@ -7,7 +7,7 @@ var Model = (function () {
 	,   Arr            = (!!Float32Array) ? Float32Array : Array
 	,   cap            = function (str) { return str.charAt(0).toUpperCase() + str.slice(1); }
 	,   c              = {} // just a buffer for stuff we don't want in the garbage
-    ,   i, j, k        // some iterators
+	,   i, j, k        // some iterators
 	,   genTrigTables  // var here to exec and define below
 	;
 
@@ -141,24 +141,26 @@ var Model = (function () {
 		this.ctx.save();
 		this.ctx.strokeStyle = 'lime';
 
-		for (i=0; i < this.vertRefs.length; i++) {
+		for (i=0,j=0; i < this.vertRefs.length; i++,j--) {
 			c.pntOffset = (this.vertRefs[i]-1)*3; //
 
 			// project the vertex
 			c.projPnt[0] = (this.worldVert[c.pntOffset]*this.viewDist/this.worldVert[c.pntOffset+2]) + this.halfWidth; 
 			c.projPnt[1] = (this.worldVert[c.pntOffset+1]*this.viewDist/this.worldVert[c.pntOffset+2])*this.aspect + this.halfHeight;
 
-			if (i%this.vertPerFace === 0){ 
+			if (j === 0) {
 				if (i !== 0) {
 					this.ctx.stroke();
 					this.ctx.closePath();
 				}
+
 				this.ctx.beginPath();
 				this.ctx.moveTo(c.projPnt[0], c.projPnt[1]);
+				j = this.vertPerFace;
+ 
 			} else {
 				this.ctx.lineTo(c.projPnt[0], c.projPnt[1]);
 			}
-
 		}
 
 		this.ctx.restore();
