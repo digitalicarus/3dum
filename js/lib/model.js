@@ -34,7 +34,7 @@ var Model = (function () {
 				trigTab['arc' + cap(funcs[k])][i] = 1 / trigTab[funcs[k]][i]; 
 			}
 		} 	
-	})(); // run at least once
+	})(); // run at least once - may want to run again later? ... hence the symbol 
 
 	// Util functions
 	function rotToTrigTabIdx (val) {
@@ -142,7 +142,7 @@ var Model = (function () {
 		this.ctx.strokeStyle = 'lime';
 
 		for (i=0,j=0; i < this.vertRefs.length; i++,j--) {
-			c.pntOffset = (this.vertRefs[i]-1)*3; //
+			c.pntOffset = (this.vertRefs[i]-1)*3;
 
 			// project the vertex
 			c.projPnt[0] = (this.worldVert[c.pntOffset]*this.viewDist/this.worldVert[c.pntOffset+2]) + this.halfWidth; 
@@ -154,6 +154,13 @@ var Model = (function () {
 					this.ctx.closePath();
 				}
 
+				// draw normal
+				/*
+				this.ctx.beginPath();
+				this.ctx.stroke();
+				this.closePath();
+				*/
+
 				this.ctx.beginPath();
 				this.ctx.moveTo(c.projPnt[0], c.projPnt[1]);
 				j = this.vertPerFace;
@@ -162,6 +169,9 @@ var Model = (function () {
 				this.ctx.lineTo(c.projPnt[0], c.projPnt[1]);
 			}
 		}
+		// close the last path
+		this.ctx.stroke();
+		this.ctx.closePath();
 
 		this.ctx.restore();
 	};
@@ -181,8 +191,7 @@ var Model = (function () {
 
 		obj = obj || "";
 
-		// TODO: calc normals
-
+		// Parse OBJ
 		Model.prototype.vertices = new Arr(
 			[].concat.apply([], (obj.match(/v .*/g) || []).map(function (v,i) {
 				return v.replace(/v\s+/, '').split(/\s+/).map(function (v,i) {
@@ -201,6 +210,52 @@ var Model = (function () {
 
 		Model.prototype.vertPerFace = obj.match(/f .*/)[0].replace(/f\s+/, '').replace(/[\/]{1,2}[0-9]+/g, '').match(/[0-9]+/g).length;
 
+		// Generate Normals
+		Model.prototype.normals = new Arr((Model.prototype.vertRefs.length / Model.prototype.vertPerFace)*3);
+		(function () {
+			var tmpV1=[], tmpV2=[], normal=[], p = [] /*verts-pnts*/, pntOffset, mag
+			,   vertices = Array.apply([], Model.prototype.vertices)
+			;
+
+			for (i=0,k=1; i<Model.prototype.vertRefs.length; i+=Model.prototype.vertPerFace,k++) {
+				/* 
+					given 3 vertices in consistent winding order, take the cross product
+					proto.vertRefs, proto.vertices, proto.vertPerFace
+
+					http://www.fullonsoftware.co.uk/snippets/content/Math_-_Calculating_Face_Normals.pdf 
+					Normal.x = (v1.y * v2.z) - (v1.z * v2.y); 
+					Normal.y = -((v2.z * v1.x) - (v2.x * v1.z)); 
+					Normal.z = (v1.x * v2.y) - (v1.y * v2.x); 
+				*/
+
+				// get pnts - 3 vertices to make a normal
+				for (j=0; j<3; j++) {
+					pntOffset = (Model.prototype.vertRefs[i+j]-1)*Model.prototype.vertPerFace; // 3 pnts per vert, vertPerFace verts per face 
+					p[j] = vertices.slice(pntOffset, pntOffset + 3);
+				}
+
+				// make a couple vectors
+				tmpV1[0] = p[1][0] - p[0][0]; tmpV1[1] = p[1][1] - p[0][1]; tmpV1[2] = p[1][2] - p[0][2];
+				tmpV2[0] = p[2][0] - p[0][0]; tmpV2[1] = p[2][1] - p[0][1]; tmpV2[2] = p[2][2] - p[0][2];
+
+				// cross product
+				normal[0] =   tmpV1[1]*tmpV2[2] - tmpV1[2]*tmpV2[1];
+				normal[1] = -(tmpV2[2]*tmpV1[0] - tmpV2[0]*tmpV1[2]);
+				normal[2] =   tmpV1[0]*tmpV2[1] - tmpV1[1]*tmpV2[0];
+
+				// normalize
+				mag = Math.sqrt(Math.pow(normal[0],2) + Math.pow(normal[1],2) + Math.pow(normal[2],2));
+				for (j=0; j<3; j++) {
+					normal[j] /= mag;
+
+					// store in normal member
+					Model.prototype.normals[j*k] = normal[j];
+				}
+
+			}
+		})();
+
+		// Add mixin refs to prototype
 		for (i in mixins) {
 			if (mixins.hasOwnProperty(i)) {
 				Model.prototype[i] = mixins[i];
