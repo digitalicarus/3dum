@@ -9,6 +9,7 @@ var Model = (function () {
 	,   c              = {} // just a buffer for stuff we don't want in the garbage
 	,   i, j, k        // some iterators
 	,   genTrigTables  // var here to exec and define below
+	,   vertRegex      = /[^\/\s]+(?:\/[^\/\s]+|\/)?(?:\/[^\/\s]+)?/g
 	;
 
 	// for tranformaciones
@@ -142,7 +143,7 @@ var Model = (function () {
 		this.ctx.strokeStyle = 'lime';
 
 		for (i=0,j=0; i < this.vertRefs.length; i++,j--) {
-			c.pntOffset = (this.vertRefs[i]-1)*3;
+			c.pntOffset = (this.vertRefs[i])*3;
 
 			// project the vertex
 			c.projPnt[0] = (this.worldVert[c.pntOffset]*this.viewDist/this.worldVert[c.pntOffset+2]) + this.halfWidth; 
@@ -153,13 +154,6 @@ var Model = (function () {
 					this.ctx.stroke();
 					this.ctx.closePath();
 				}
-
-				// draw normal
-				/*
-				this.ctx.beginPath();
-				this.ctx.stroke();
-				this.closePath();
-				*/
 
 				this.ctx.beginPath();
 				this.ctx.moveTo(c.projPnt[0], c.projPnt[1]);
@@ -191,7 +185,23 @@ var Model = (function () {
 
 		obj = obj || "";
 
-		// Parse OBJ
+		Model.prototype.normals = new Arr(
+			[].concat.apply([], (obj.match(/vn .*/g) || []).map(function (v,i) {
+				return v.replace(/vn\s+/, '').split(/\s+/).map(function (v,i) {
+					return parseFloat(v);
+				});
+			}))
+		);
+
+		Model.prototype.texels = new Arr(
+			[].concat.apply([], (obj.match(/vt .*/g) || []).map(function (v,i) {
+				return v.replace(/vt\s+/, '').split(/\s+/).map(function (v,i) {
+					return parseFloat(v);
+				});
+			}))
+		);
+ 
+
 		Model.prototype.vertices = new Arr(
 			[].concat.apply([], (obj.match(/v .*/g) || []).map(function (v,i) {
 				return v.replace(/v\s+/, '').split(/\s+/).map(function (v,i) {
@@ -199,60 +209,93 @@ var Model = (function () {
 				});
 			}))
 		);
-
-		Model.prototype.vertRefs = new Arr(
-			[].concat.apply([], (obj.match(/f .*/g) || []).map(function (v,i) {
-				return v.replace(/f\s+/, '').replace(/[\/]{1,2}[0-9]+/g, '').match(/[0-9]+/g).map(function (v) {
-					return parseFloat(v);
-				});
-			}))
-		);
-
-		Model.prototype.vertPerFace = obj.match(/f .*/)[0].replace(/f\s+/, '').replace(/[\/]{1,2}[0-9]+/g, '').match(/[0-9]+/g).length;
-
-		// Generate Normals
-		Model.prototype.normals = new Arr((Model.prototype.vertRefs.length / Model.prototype.vertPerFace)*3);
+ 
+ 		// Parse faces
 		(function () {
-			var tmpV1=[], tmpV2=[], normal=[], p = [] /*verts-pnts*/, pntOffset, mag
-			,   vertices = Array.apply([], Model.prototype.vertices)
+			var vertRefs    = [] // vertex refs in faces
+			,   numVerts    = [] // num verts per each face
+			,   texelRefs   = [] // vert refs to texel coords
+			,   normRefs    = [] // vert refs to normal elements
+			,   tmpMatch    = [] // tmp storage for regex matches
 			;
 
-			for (i=0,k=1; i<Model.prototype.vertRefs.length; i+=Model.prototype.vertPerFace,k++) {
-				/* 
-					given 3 vertices in consistent winding order, take the cross product
-					proto.vertRefs, proto.vertices, proto.vertPerFace
 
-					http://www.fullonsoftware.co.uk/snippets/content/Math_-_Calculating_Face_Normals.pdf 
-					Normal.x = (v1.y * v2.z) - (v1.z * v2.y); 
-					Normal.y = -((v2.z * v1.x) - (v2.x * v1.z)); 
-					Normal.z = (v1.x * v2.y) - (v1.y * v2.x); 
-				*/
+			obj.match(/f\s+.*/g).forEach(function (v) {
+				numVerts.push(v.match(vertRegex).length - 1);
 
-				// get pnts - 3 vertices to make a normal
-				for (j=0; j<3; j++) {
-					pntOffset = (Model.prototype.vertRefs[i+j]-1)*Model.prototype.vertPerFace; // 3 pnts per vert, vertPerFace verts per face 
-					p[j] = vertices.slice(pntOffset, pntOffset + 3);
+				v.replace(/f\s+/, '').match(vertRegex).forEach(function (v) {
+
+					// obj file refs are 1 based -- correct that here
+					tmpMatch = v.split('\/').map(function(v) { return parseFloat(v) - 1; });
+					if (!tmpMatch) { return; }
+
+					switch(tmpMatch.length) {
+						case 1:
+							// f # # #           -- vertex ref only
+							vertRefs.push(tmpMatch[0]);
+							break;
+						case 2:
+							// f #/# #/# #/#     -- vertex & texel 
+							vertRefs.push(tmpMatch[0]);
+							texelRefs.push(tmpMatch[1]);
+							break;
+						case 3: 
+							// f #/#/# #/#/#     -- vertex & texel & normal
+							// f #//# #//# #//#  -- vertex & normal
+							vertRefs.push(tmpMatch[0]);
+							!isNaN(tmpMatch[1]) && texelRefs.push(tmpMatch[1]);
+							!isNaN(tmpMatch[2]) && normRefs.push(tmpMatch[2]);
+							break;
+					}
+				});
+
+			});
+			Model.prototype.vertRefs  = new Arr(vertRefs);
+			Model.prototype.texelRefs = new Arr(vertRefs);
+			Model.prototype.numVerts  = new Arr(numVerts);
+
+			// if we want to assume they are all the same 
+			Model.prototype.vertPerFace = Model.prototype.numVerts[0];
+
+			// Generate Face Normals
+			Model.prototype.faceNormals = new Arr((Model.prototype.vertRefs.length / Model.prototype.vertPerFace)*3);
+
+			(function () {
+				var tmpV1=[], tmpV2=[], normal=[], p = [] /*verts-pnts*/, pntOffset, mag
+				,   vertices = Array.apply([], Model.prototype.vertices)
+				;
+
+				for (i=0; i<Model.prototype.vertRefs.length; i+=Model.prototype.vertPerFace) {
+					/* 
+						given 3 vertices in consistent winding order, take the cross product
+						proto.vertRefs, proto.vertices, proto.vertPerFace
+					 */
+
+					// get pnts - 3 vertices to make a normal
+					for (j=0; j<3; j++) {
+						pntOffset = (Model.prototype.vertRefs[i+j])*Model.prototype.vertPerFace; // 3 pnts per vert, vertPerFace verts per face 
+						p[j] = vertices.slice(pntOffset, pntOffset + 3);
+					}
+
+					// make a couple vectors
+					tmpV1[0] = p[1][0] - p[0][0]; tmpV1[1] = p[1][1] - p[0][1]; tmpV1[2] = p[1][2] - p[0][2];
+					tmpV2[0] = p[2][0] - p[0][0]; tmpV2[1] = p[2][1] - p[0][1]; tmpV2[2] = p[2][2] - p[0][2];
+
+					// cross product
+					normal[0] =   tmpV1[1]*tmpV2[2] - tmpV1[2]*tmpV2[1];
+					normal[1] =   tmpV1[2]*tmpV2[0] - tmpV1[0]*tmpV2[2];
+					normal[2] =   tmpV1[0]*tmpV2[1] - tmpV1[1]*tmpV2[0];
+
+					// normalize
+					mag = Math.sqrt(Math.pow(normal[0],2) + Math.pow(normal[1],2) + Math.pow(normal[2],2));
+					for (j=0; j<3; j++) {
+						normal[j] /= mag;
+
+						// store in normal member
+						Model.prototype.faceNormals[i + j] = normal[j];
+					}
 				}
-
-				// make a couple vectors
-				tmpV1[0] = p[1][0] - p[0][0]; tmpV1[1] = p[1][1] - p[0][1]; tmpV1[2] = p[1][2] - p[0][2];
-				tmpV2[0] = p[2][0] - p[0][0]; tmpV2[1] = p[2][1] - p[0][1]; tmpV2[2] = p[2][2] - p[0][2];
-
-				// cross product
-				normal[0] =   tmpV1[1]*tmpV2[2] - tmpV1[2]*tmpV2[1];
-				normal[1] = -(tmpV2[2]*tmpV1[0] - tmpV2[0]*tmpV1[2]);
-				normal[2] =   tmpV1[0]*tmpV2[1] - tmpV1[1]*tmpV2[0];
-
-				// normalize
-				mag = Math.sqrt(Math.pow(normal[0],2) + Math.pow(normal[1],2) + Math.pow(normal[2],2));
-				for (j=0; j<3; j++) {
-					normal[j] /= mag;
-
-					// store in normal member
-					Model.prototype.normals[j*k] = normal[j];
-				}
-
-			}
+			})();
 		})();
 
 		// Add mixin refs to prototype

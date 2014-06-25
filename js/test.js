@@ -28,7 +28,7 @@ function gameloop () {
 }
 
 function loadObjData (data) {
-	Teapot = Model.define(data.data.files['utahteapot.obj'].content);
+	Teapot = Model.define(data.data.files['cube.obj'].content);
 	lilTeapot = new Teapot();
 	lilTeapot.setViewDist(viewDist);
 	lilTeapot.scale(130);
