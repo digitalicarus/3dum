@@ -28,12 +28,12 @@ function gameloop () {
 }
 
 function loadObjData (data) {
-	Teapot = Model.define(data.data.files['cube.obj'].content);
+	Teapot = Model.define(data.data.files['utahteapot.obj'].content);
 	lilTeapot = new Teapot();
 	lilTeapot.setViewDist(viewDist);
 	lilTeapot.scale(130);
 	lilTeapot.translateY(70);
-	lilTeapot.translateZ(1400);
+	lilTeapot.translateZ(1600);
 	lilTeapot.rotateX(180);
 	gameloop();
 }

@@ -14,8 +14,9 @@ var Model = (function () {
 
 	// for tranformaciones
 	c.tmpVec      = new Arr(4);
-	c.tmpMat      = new Arr(16);
-	c.projPnt     = new Arr(2);
+	c.tmpMatSRT   = new Arr(16);
+	c.tmpMatR     = new Arr(16);
+	c.projPnt     = new Arr(4);
 	c.pntOffset   = 0;
 
 	(genTrigTables = function () {
@@ -103,36 +104,99 @@ var Model = (function () {
 		c.rx = this.rot[0];   c.ry = this.rot[1];   c.rz = this.rot[2];
 
 		// scale, rotate, translate
-		c.tmpMat[0] = c.sx*tt.cos[c.rz]*tt.cos[c.ry];
-		c.tmpMat[1] = c.sy*(-tt.sin[c.rz]*tt.cos[c.rx] + tt.cos[c.rz]*tt.sin[c.ry]*tt.sin[c.rx]);
-		c.tmpMat[2] = c.sz*(tt.sin[c.rz]*tt.sin[c.rx] + tt.cos[c.rz]*tt.sin[c.ry]*tt.cos[c.rx]);
-		c.tmpMat[3] = c.x;
+		// TODO: rotate only matrix for normals to remove need to normalize
+		c.tmpMatSRT[0]  = c.sx*tt.cos[c.rz]*tt.cos[c.ry];
+		c.tmpMatSRT[1]  = c.sy*(-tt.sin[c.rz]*tt.cos[c.rx] + tt.cos[c.rz]*tt.sin[c.ry]*tt.sin[c.rx]);
+		c.tmpMatSRT[2]  = c.sz*(tt.sin[c.rz]*tt.sin[c.rx] + tt.cos[c.rz]*tt.sin[c.ry]*tt.cos[c.rx]);
+		c.tmpMatSRT[3]  = c.x;
 
-		c.tmpMat[4] = c.sx*tt.sin[c.rz]*tt.cos[c.ry];
-		c.tmpMat[5] = c.sy*(tt.cos[c.rz]*tt.cos[c.rx] + tt.sin[c.rz]*tt.sin[c.ry]*tt.sin[c.rx]);
-		c.tmpMat[6] = c.sz*(-tt.cos[c.rz]*tt.sin[c.rx] + tt.sin[c.rz]*tt.sin[c.ry]*tt.cos[c.rx]);
-		c.tmpMat[7] = c.y;
+		c.tmpMatSRT[4]  = c.sx*tt.sin[c.rz]*tt.cos[c.ry];
+		c.tmpMatSRT[5]  = c.sy*(tt.cos[c.rz]*tt.cos[c.rx] + tt.sin[c.rz]*tt.sin[c.ry]*tt.sin[c.rx]);
+		c.tmpMatSRT[6]  = c.sz*(-tt.cos[c.rz]*tt.sin[c.rx] + tt.sin[c.rz]*tt.sin[c.ry]*tt.cos[c.rx]);
+		c.tmpMatSRT[7]  = c.y;
 
-		c.tmpMat[8] = -c.sx*tt.sin[c.ry];
-		c.tmpMat[9] = c.sy*tt.cos[c.ry]*tt.sin[c.rx];
-		c.tmpMat[10] = c.sz*tt.cos[c.ry]*tt.cos[c.rx];
-		c.tmpMat[11] = c.z;
+		c.tmpMatSRT[8]  = -c.sx*tt.sin[c.ry];
+		c.tmpMatSRT[9]  = c.sy*tt.cos[c.ry]*tt.sin[c.rx];
+		c.tmpMatSRT[10] = c.sz*tt.cos[c.ry]*tt.cos[c.rx];
+		c.tmpMatSRT[11] = c.z;
 
+		// just rotation, for normals
+		c.tmpMatR[0]    = tt.cos[c.ry]*tt.cos[c.rz];
+		c.tmpMatR[1]    = -tt.cos[c.ry]*tt.sin[c.rz];
+		c.tmpMatR[2]    = -tt.sin[c.ry];
+		c.tmpMatR[3]    = 0;
+
+		c.tmpMatR[4]    = -tt.sin[c.rx]*tt.sin[c.ry]*tt.cos[c.rz] + tt.cos[c.rx]*tt.sin[c.rz];
+		c.tmpMatR[5]    = tt.sin[c.rx]*tt.sin[c.ry]*tt.sin[c.rz] + tt.cos[c.rx]*tt.cos[c.rz];
+		c.tmpMatR[6]    = -tt.sin[c.rx]*tt.cos[c.ry];
+		c.tmpMatR[7]    = 0;
+
+		c.tmpMatR[8]    = tt.cos[c.rx]*tt.sin[c.ry]*tt.cos[c.rz] + tt.sin[c.rx]*tt.sin[c.rz];
+		c.tmpMatR[9]    = -tt.cos[c.rx]*tt.sin[c.ry]*tt.sin[c.rz] + tt.sin[c.rx]*tt.cos[c.rz];
+		c.tmpMatR[10]   = tt.cos[c.rx]*tt.cos[c.ry];
+		c.tmpMatR[11]   = 0;
+
+
+		// transform copy of camera view vector (for backface culling)
+		// currently the camera vector is always [0, 0, this.viewDist, 1]
+		this.camVec[0] = c.tmpMatSRT[2]*this.viewDist;
+		this.camVec[1] = c.tmpMatSRT[6]*this.viewDist;
+		this.camVec[2] = c.tmpMatSRT[10]*this.viewDist;
+
+		// vertices
 		for (i=0; i<this.vertices.length; i+=3) {
-			// scale
 			c.tmpVec[0] = this.vertices[i];
 			c.tmpVec[1] = this.vertices[i+1];
 			c.tmpVec[2] = this.vertices[i+2];
 			c.tmpVec[3] = 1;
 
 			// mat * vec
-			this.worldVert[i] = c.tmpMat[0]*c.tmpVec[0] + c.tmpMat[1]*c.tmpVec[1] + 
-				c.tmpMat[2]*c.tmpVec[2] + c.tmpMat[3]*c.tmpVec[3];
-			this.worldVert[i+1] = c.tmpMat[4]*c.tmpVec[0] + c.tmpMat[5]*c.tmpVec[1] + 
-				c.tmpMat[6]*c.tmpVec[2] + c.tmpMat[7]*c.tmpVec[3];
-			this.worldVert[i+2] = c.tmpMat[8]*c.tmpVec[0] + c.tmpMat[9]*c.tmpVec[1] + 
-				c.tmpMat[10]*c.tmpVec[2] + c.tmpMat[11]*c.tmpVec[3];
+			this.worldVert[i] = c.tmpMatSRT[0]*c.tmpVec[0] + c.tmpMatSRT[1]*c.tmpVec[1] + 
+				c.tmpMatSRT[2]*c.tmpVec[2] + c.tmpMatSRT[3]*c.tmpVec[3];
+			this.worldVert[i+1] = c.tmpMatSRT[4]*c.tmpVec[0] + c.tmpMatSRT[5]*c.tmpVec[1] + 
+				c.tmpMatSRT[6]*c.tmpVec[2] + c.tmpMatSRT[7]*c.tmpVec[3];
+			this.worldVert[i+2] = c.tmpMatSRT[8]*c.tmpVec[0] + c.tmpMatSRT[9]*c.tmpVec[1] + 
+				c.tmpMatSRT[10]*c.tmpVec[2] + c.tmpMatSRT[11]*c.tmpVec[3];
 		};
+
+		// face normals & centroids
+		for (i=0; i<this.faceNormals.length; i +=3) {
+			c.tmpVec[0] = this.faceNormals[i];
+			c.tmpVec[1] = this.faceNormals[i+1];
+			c.tmpVec[2] = this.faceNormals[i+2];
+			c.tmpVec[3] = 1;
+
+			this.worldFaceNormals[i] = c.tmpMatR[0]*c.tmpVec[0] + c.tmpMatR[1]*c.tmpVec[1] + 
+				c.tmpMatR[2]*c.tmpVec[2] + c.tmpMatR[3]*c.tmpVec[3];
+			this.worldFaceNormals[i+1] = c.tmpMatR[4]*c.tmpVec[0] + c.tmpMatR[5]*c.tmpVec[1] + 
+				c.tmpMatR[6]*c.tmpVec[2] + c.tmpMatR[7]*c.tmpVec[3];
+			this.worldFaceNormals[i+2] = c.tmpMatR[8]*c.tmpVec[0] + c.tmpMatR[9]*c.tmpVec[1] + 
+				c.tmpMatR[10]*c.tmpVec[2] + c.tmpMatR[11]*c.tmpVec[3];
+
+			c.tmpMag = Math.sqrt(
+				Math.pow(this.worldFaceNormals[i], 2) +
+				Math.pow(this.worldFaceNormals[i+1], 2) + 
+				Math.pow(this.worldFaceNormals[i+2], 2)
+			);
+
+			// normalize normals
+//			this.worldFaceNormals[i] /= c.tmpMag;
+//			this.worldFaceNormals[i+1] /= c.tmpMag;
+//			this.worldFaceNormals[i+2] /= c.tmpMag;
+//
+			// --  centroids
+			c.tmpVec[0] = this.centroids[i];
+			c.tmpVec[1] = this.centroids[i+1];
+			c.tmpVec[2] = this.centroids[i+2];
+
+			this.worldCentroids[i] = c.tmpMatSRT[0]*c.tmpVec[0] + c.tmpMatSRT[1]*c.tmpVec[1] + 
+				c.tmpMatSRT[2]*c.tmpVec[2] + c.tmpMatSRT[3]*c.tmpVec[3];
+			this.worldCentroids[i+1] = c.tmpMatSRT[4]*c.tmpVec[0] + c.tmpMatSRT[5]*c.tmpVec[1] + 
+				c.tmpMatSRT[6]*c.tmpVec[2] + c.tmpMatSRT[7]*c.tmpVec[3];
+			this.worldCentroids[i+2] = c.tmpMatSRT[8]*c.tmpVec[0] + c.tmpMatSRT[9]*c.tmpVec[1] + 
+				c.tmpMatSRT[10]*c.tmpVec[2] + c.tmpMatSRT[11]*c.tmpVec[3];
+		}
+
 	};
 
 	// TODO: transform in actual transformation functions?
@@ -141,15 +205,51 @@ var Model = (function () {
 
 		this.ctx.save();
 		this.ctx.strokeStyle = 'lime';
+		this.ctx.fillStyle = 'lime';
 
 		for (i=0,j=0; i < this.vertRefs.length; i++,j--) {
+			// Assuming 3 verts per poly 
 			c.pntOffset = (this.vertRefs[i])*3;
+
+			/*
+			if (j===0) { 
+
+   				if (
+					this.camVec[0]*this.worldFaceNormals[i] + 
+					this.camVec[1]*this.worldFaceNormals[i+1] + 
+					this.camVec[2]*this.worldFaceNormals[i+2]
+					< 0
+				) {
+					this.ctx.strokeStyle = 'red';
+				} else {
+					this.ctx.strokeStyle = 'lime';
+				}
+
+			}
+			*/
 
 			// project the vertex
 			c.projPnt[0] = (this.worldVert[c.pntOffset]*this.viewDist/this.worldVert[c.pntOffset+2]) + this.halfWidth; 
 			c.projPnt[1] = (this.worldVert[c.pntOffset+1]*this.viewDist/this.worldVert[c.pntOffset+2])*this.aspect + this.halfHeight;
 
 			if (j === 0) {
+
+				/*
+   				if (
+					this.worldFaceNormals[i] + 
+					this.worldFaceNormals[i+1] + 
+					this.worldFaceNormals[i+2]
+					< 0
+				) {
+					this.ctx.fillStyle= 'red';
+				} else {
+					this.ctx.fillStyle = 'lime';
+				}
+				*/
+
+ 
+				// draw normal
+
 				if (i !== 0) {
 					this.ctx.stroke();
 					this.ctx.closePath();
@@ -158,7 +258,25 @@ var Model = (function () {
 				this.ctx.beginPath();
 				this.ctx.moveTo(c.projPnt[0], c.projPnt[1]);
 				j = this.vertPerFace;
- 
+
+				// project the centroid
+				/*
+				c.projPnt[2] = (this.worldCentroids[i]*this.viewDist/this.worldCentroids[i+2]) + this.halfWidth; 
+				c.projPnt[3] = (this.worldCentroids[i+1]*this.viewDist/this.worldCentroids[i+2])*this.aspect + this.halfHeight;
+				this.ctx.fillRect(c.projPnt[2], c.projPnt[3], 3, 3);
+
+				this.ctx.save();
+				this.ctx.beginPath();
+				this.ctx.moveTo(c.projPnt[2], c.projPnt[3]);
+				c.projPnt[2] = (((this.worldCentroids[i] + this.worldFaceNormals[i]*20)*this.viewDist/(this.worldCentroids[i+2] + this.worldFaceNormals[i+2]*20)) + this.halfWidth);
+				c.projPnt[3] =  ((this.worldCentroids[i+1]+this.worldFaceNormals[i+1]*20)*this.viewDist/(this.worldCentroids[i+2]+this.worldFaceNormals[i+2]*20))*this.aspect + this.halfHeight;
+				this.ctx.lineTo(c.projPnt[2], c.projPnt[3]);
+				this.ctx.stroke();
+				this.ctx.closePath();
+				this.ctx.moveTo(c.projPnt[0], c.projPnt[1]);
+				this.ctx.restore();
+				*/
+
 			} else {
 				this.ctx.lineTo(c.projPnt[0], c.projPnt[1]);
 			}
@@ -181,6 +299,9 @@ var Model = (function () {
 
 			// this instances transformed/world vertices
 			this.worldVert = new Arr(this.vertices);
+			this.worldFaceNormals = new Arr(this.faceNormals);
+			this.worldCentroids = new Arr(this.centroids);
+			this.camVec = new Arr(3);
 		};
 
 		obj = obj || "";
@@ -201,7 +322,6 @@ var Model = (function () {
 			}))
 		);
  
-
 		Model.prototype.vertices = new Arr(
 			[].concat.apply([], (obj.match(/v .*/g) || []).map(function (v,i) {
 				return v.replace(/v\s+/, '').split(/\s+/).map(function (v,i) {
@@ -209,7 +329,7 @@ var Model = (function () {
 				});
 			}))
 		);
- 
+
  		// Parse faces
 		(function () {
 			var vertRefs    = [] // vertex refs in faces
@@ -257,25 +377,35 @@ var Model = (function () {
 			// if we want to assume they are all the same 
 			Model.prototype.vertPerFace = Model.prototype.numVerts[0];
 
-			// Generate Face Normals
+			// face normals array
 			Model.prototype.faceNormals = new Arr((Model.prototype.vertRefs.length / Model.prototype.vertPerFace)*3);
 
+			// ... and centroids
+			Model.prototype.centroids = new Arr((Model.prototype.vertRefs.length / Model.prototype.vertPerFace)*3);
+
+			// gen face normals and centroids
 			(function () {
 				var tmpV1=[], tmpV2=[], normal=[], p = [] /*verts-pnts*/, pntOffset, mag
 				,   vertices = Array.apply([], Model.prototype.vertices)
 				;
 
 				for (i=0; i<Model.prototype.vertRefs.length; i+=Model.prototype.vertPerFace) {
-					/* 
-						given 3 vertices in consistent winding order, take the cross product
-						proto.vertRefs, proto.vertices, proto.vertPerFace
-					 */
 
 					// get pnts - 3 vertices to make a normal
 					for (j=0; j<3; j++) {
 						pntOffset = (Model.prototype.vertRefs[i+j])*Model.prototype.vertPerFace; // 3 pnts per vert, vertPerFace verts per face 
 						p[j] = vertices.slice(pntOffset, pntOffset + 3);
 					}
+					// average points to make a centroid
+                    Model.prototype.centroids[i]   = (p[0][0] + p[1][0] + p[2][0]) / 3;
+                    Model.prototype.centroids[i+1] = (p[0][1] + p[1][1] + p[2][1]) / 3;
+                    Model.prototype.centroids[i+2] = (p[0][2] + p[1][2] + p[2][2]) / 3;
+
+					// face normal
+					/* 
+						given 3 vertices in consistent winding order, take the cross product
+						proto.vertRefs, proto.vertices, proto.vertPerFace
+					 */
 
 					// make a couple vectors
 					tmpV1[0] = p[1][0] - p[0][0]; tmpV1[1] = p[1][1] - p[0][1]; tmpV1[2] = p[1][2] - p[0][2];
